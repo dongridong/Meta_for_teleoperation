@@ -27,14 +27,24 @@ One line carries the whole device state:
         "buttons": { "primary": false, "secondary": false,
                      "menu": false, "thumbstick": false } },
       { "side": "right", "tracked": false }
-    ]
+    ],
+    "body": { "tracked": true, "fidelity": "high", "confidence": 0.97,
+              "joints": [ { "i": 0, "valid": true,
+                            "position": [x,y,z], "rotation": [x,y,z,w] }, ... x18 ] }
   }
 
-Hands vs controllers: the two are INDEPENDENT, not a mode switch. Any frame may
-carry both, either, or neither — pick whichever source is tracked. "controller"
-is the handle POSE; "grip_trigger" is the INDEX (front) trigger — named for its
-role, it drives the gripper — and "ctrl_trigger" is the hardware grip (side)
-analog axis.
+Hands vs controllers vs body: all three are INDEPENDENT, not a mode switch. Any
+frame may carry any combination of them — pick whichever source is tracked.
+"controller" is the handle POSE; "grip_trigger" is the INDEX (front) trigger —
+named for its role, it drives the gripper — and "ctrl_trigger" is the hardware
+grip (side) analog axis.
+
+"body" is the upper-body skeleton from Meta's Inside-Out Body Tracking: 18
+joints (torso + arms, indices 0..17 of OpenXR's XrBodyJointFB), ending at the
+wrist twist because the hands are already published in full under "hands".
+"fidelity" says how it was tracked — "high" is real inside-out camera tracking,
+"low" is inferred from headset + controllers, "unspecified" is the runtime
+default.
 
 Frame: every pose/landmark is in the "robot_world" frame — RIGHT-HANDED,
 +X forward, +Y left, +Z up (FLU, ROS REP-103 style), meters. The publisher
@@ -46,8 +56,10 @@ Tracking loss:
   - An untracked hand is {"side": ..., "tracked": false} (no palm/landmarks).
   - An untracked controller is {"side": ..., "tracked": false} (nothing else).
   - An untracked HMD is {"tracked": false} (no position/rotation).
-  - A landmark, palm or controller pose with "valid": false omits its
-    position/rotation.
+  - An untracked body is {"tracked": false} (no fidelity/confidence/joints).
+    Expect this until the body-tracking permission is granted on the headset.
+  - A landmark, palm, controller or body-joint pose with "valid": false omits
+    its position/rotation.
 
 Usage:
     python subscriber.py --host 192.168.0.42 --port 5555
@@ -60,6 +72,12 @@ import time
 from typing import Optional
 
 LANDMARKS_PER_HAND = 21
+JOINTS_PER_BODY = 18
+
+# Upper-body joint indices worth printing: the elbows are what Inside-Out Body
+# Tracking adds over the hand/HMD data we already had.
+BODY_LEFT_ARM_LOWER = 11
+BODY_RIGHT_ARM_LOWER = 16
 
 
 def main() -> None:
@@ -137,7 +155,8 @@ def format_packet(pkt: dict, rate: float) -> str:
         f"  ctrls  L={controller_flag(ctrls.get('left'))}"
         f"   R={controller_flag(ctrls.get('right'))}"
     )
-    return "\n".join((header, hand_line, ctrl_line))
+    body_line = f"  body   {body_flag(pkt.get('body'))}"
+    return "\n".join((header, hand_line, ctrl_line, body_line))
 
 
 def by_side(items) -> dict:
@@ -191,6 +210,39 @@ def controller_flag(ctrl: Optional[dict]) -> str:
         f"ctrlTrig={ctrl.get('ctrl_trigger', 0.0):.2f} "
         f"stick=({stick[0]:+.2f},{stick[1]:+.2f}) [{pressed or '-':4}]"
     )
+
+
+def body_flag(body: Optional[dict]) -> str:
+    """One-line upper-body summary: joint count, tracking fidelity, both elbows.
+
+    `fidelity` is the interesting part — "high" means the runtime is really doing
+    Inside-Out Body Tracking (headset cameras on the arms), while "low" means the
+    arms are only inferred from the headset and controller poses.
+    """
+    if body is None or not body.get("tracked"):
+        return "off"
+
+    joints = body.get("joints") or []
+    valid = sum(1 for j in joints if j.get("valid"))
+    return (
+        f"ON({valid}/{JOINTS_PER_BODY}) "
+        f"fid={body.get('fidelity', '?'):11} "
+        f"conf={body.get('confidence', 0.0):.2f} "
+        f"elbowL={fmt_xyz(body_joint_position(joints, BODY_LEFT_ARM_LOWER))} "
+        f"elbowR={fmt_xyz(body_joint_position(joints, BODY_RIGHT_ARM_LOWER))}"
+    )
+
+
+def body_joint_position(joints: list, index: int) -> Optional[list]:
+    """[x, y, z] of body joint `index`, or None when missing/invalid.
+
+    Matched on the "i" field rather than list position: the array is always 18
+    entries in order, but keying on "i" keeps this correct regardless.
+    """
+    for joint in joints:
+        if isinstance(joint, dict) and joint.get("i") == index:
+            return joint.get("position") if joint.get("valid") else None
+    return None
 
 
 def fmt_xyz(p: Optional[list]) -> str:

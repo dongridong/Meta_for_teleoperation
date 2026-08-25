@@ -21,13 +21,32 @@ using UnityEngine;
 //
 //   ... -executeMethod BuildAndroid.Build -output Build/Meta_with_hands.apk
 //   ... -executeMethod BuildAndroid.Build -output Build/Meta_with_controllers.apk \
-//         -productName Meta_with_controllers \
-//         -applicationIdentifier com.dongridong.metacontroller
+//         -productName "Meta with controller" \
+//         -applicationIdentifier com.dongridong.metacontroller \
+//         -handVisualization off
+//
+// productName is the label the headset shows under the app icon, so it is a
+// human-readable name with spaces; the default output file name replaces those
+// spaces with underscores to keep the APK path shell-friendly.
+//
+// -handVisualization off compiles the on-device hand skeleton/landmark
+// rendering out of the APK, and is what makes the controller build a controller
+// build. Hand tracking stays enabled project-wide, so the Quest runtime hands
+// the app hand joints the moment a controller stops being tracked — without
+// this the skeleton pops up mid-session whenever a controller is put down.
+// PUBLISHED DATA IS UNAFFECTED: the "hands" field of the TCP stream is
+// identical in both APKs (see SCHEMA.md); only the rendering goes away.
 //
 // The committed identity is restored after the build, so an overridden build
-// never leaves ProjectSettings.asset dirty.
+// never leaves ProjectSettings.asset dirty. -handVisualization needs no such
+// restore: it is a player-only scripting define that never touches project
+// settings in the first place.
 public static class BuildAndroid
 {
+    // Player-only scripting define that strips hand visualization. Gated on in
+    // HandVisualizer; see -handVisualization above.
+    const string NoHandVisualizationDefine = "HTV_NO_HAND_VISUALIZATION";
+
     [MenuItem("Build/Android APK")]
     public static void Build()
     {
@@ -38,6 +57,19 @@ public static class BuildAndroid
 
         if (scenes.Length == 0)
             throw new Exception("[BuildAndroid] no enabled scenes in Build Settings.");
+
+        // Parsed before anything is mutated: this validation can throw, and
+        // throwing after PlayerSettings has been overridden but before the
+        // restoring try/finally below would leave the working tree dirty.
+        // Rejecting anything but on/off is deliberate — a typo silently
+        // shipping a controller APK that still draws hands is exactly the
+        // failure this flag exists to prevent. Not a PlayerSetting, so unlike
+        // the identity overrides there is nothing to capture and restore.
+        string handVisualization = (ArgValue("-handVisualization") ?? "on").ToLowerInvariant();
+        if (handVisualization != "on" && handVisualization != "off")
+            throw new Exception($"[BuildAndroid] -handVisualization must be \"on\" or \"off\", " +
+                                $"got \"{handVisualization}\".");
+        bool handVisualizationEnabled = handVisualization == "on";
 
         // Per-build identity overrides (optional). Capture the committed values
         // first so they can be restored after the build — the overrides are for
@@ -54,14 +86,18 @@ public static class BuildAndroid
             PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.Android, appId);
 
         // Default output name follows productName, so it reflects an override.
+        // Spaces are fine in the on-device label but awkward in a file path, so
+        // the file name gets underscores.
         string output = ArgValue("-output")
-                        ?? Path.Combine("Build", PlayerSettings.productName + ".apk");
+                        ?? Path.Combine("Build",
+                               PlayerSettings.productName.Replace(' ', '_') + ".apk");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output)));
 
         Debug.Log($"[BuildAndroid] scenes: {string.Join(", ", scenes)}");
         Debug.Log($"[BuildAndroid] output: {output}");
         Debug.Log($"[BuildAndroid] productName: {PlayerSettings.productName} " +
                   $"applicationIdentifier: {PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android)}");
+        Debug.Log($"[BuildAndroid] handVisualization: {handVisualization}");
 
         var options = new BuildPlayerOptions
         {
@@ -70,6 +106,11 @@ public static class BuildAndroid
             target = BuildTarget.Android,
             targetGroup = BuildTargetGroup.Android,
             options = BuildOptions.None,
+            // Player-only: applies to this build's script compilation and is
+            // never written back to ProjectSettings.asset.
+            extraScriptingDefines = handVisualizationEnabled
+                ? null
+                : new[] { NoHandVisualizationDefine },
         };
 
         BuildSummary summary;

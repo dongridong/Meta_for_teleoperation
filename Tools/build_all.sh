@@ -14,8 +14,8 @@ UNITY="${UNITY:?set UNITY to the Unity 6000.2.12f1 executable, e.g. UNITY=~/Unit
 OUT="$PROJECT/Build"
 
 build() {
-  local out="$1" product="$2" appid="$3"
-  echo ">>> building $product ($appid) -> $out"
+  local out="$1" product="$2" appid="$3" handviz="$4"
+  echo ">>> building $product ($appid, handVisualization=$handviz) -> $out"
   "$UNITY" -quit -batchmode -nographics \
     -projectPath "$PROJECT" \
     -buildTarget Android \
@@ -23,12 +23,20 @@ build() {
     -output "$out" \
     -productName "$product" \
     -applicationIdentifier "$appid" \
+    -handVisualization "$handviz" \
     -logFile -
 }
 
-# Default identity (Meta_with_hands) matches committed ProjectSettings, so passing
-# it explicitly is redundant but keeps both invocations symmetric and self-documenting.
-build "$OUT/Meta_with_hands.apk"       Meta_with_hands       com.dongridong.metahand
-build "$OUT/Meta_with_controllers.apk" Meta_with_controllers com.dongridong.metacontroller
+# productName is what the headset shows under the app icon, so it carries spaces;
+# the APK file names stay underscored to keep them shell-friendly. The hands
+# identity matches committed ProjectSettings, so passing it explicitly is
+# redundant but keeps both invocations symmetric and self-documenting — the same
+# reason handVisualization=on is spelled out below even though it is the default.
+#
+# handVisualization is the one FUNCTIONAL difference between the two APKs: the
+# controller build does not draw the hand skeleton, so putting a controller down
+# no longer makes hands appear. Both APKs publish identical data over TCP.
+build "$OUT/Meta_with_hands.apk"       "Meta with hands"      com.dongridong.metahand       on
+build "$OUT/Meta_with_controllers.apk" "Meta with controller" com.dongridong.metacontroller off
 
 echo ">>> done. APKs in $OUT"

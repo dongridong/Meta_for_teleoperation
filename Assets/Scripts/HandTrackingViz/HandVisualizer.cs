@@ -63,6 +63,23 @@ namespace HandTrackingViz
 
         void Awake()
         {
+#if HTV_NO_HAND_VISUALIZATION
+            // Controller-only build (-handVisualization off, see BuildAndroid.cs).
+            //
+            // Hand tracking stays enabled project-wide, so the Quest runtime
+            // starts reporting tracked hands the moment a controller is put
+            // down or loses tracking — and this component, which keys purely on
+            // XRHandSubsystem state, would then draw a hand skeleton over
+            // passthrough mid-session.
+            //
+            // Disabling here (before any material or HandVisual is created)
+            // means Update() never runs and nothing is instantiated. Only the
+            // rendering goes away: PoseFramePublisher keeps sampling and
+            // publishing the hands exactly as in the hand build, so the wire
+            // schema is identical.
+            enabled = false;
+            return;
+#else
             m_LeftFrame = new HandLandmarkFrame(HandSide.Left);
             m_RightFrame = new HandLandmarkFrame(HandSide.Right);
 
@@ -75,6 +92,7 @@ namespace HandTrackingViz
 
             m_LeftVisual = CreateVisual("LeftHandVisual", m_LeftMat);
             m_RightVisual = CreateVisual("RightHandVisual", m_RightMat);
+#endif
         }
 
         HandVisual CreateVisual(string name, Material handMat)
@@ -114,6 +132,9 @@ namespace HandTrackingViz
             visual.Render(frame);
         }
 
+        // Safe on the HTV_NO_HAND_VISUALIZATION path too: Awake() returns before
+        // creating anything, so every material field is still null and
+        // DestroyMaterial ignores nulls.
         void OnDestroy()
         {
             DestroyMaterial(m_LeftMat);

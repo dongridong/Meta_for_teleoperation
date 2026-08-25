@@ -2,7 +2,8 @@
     "name": "HandTrackingViz",
     "rootNamespace": "HandTrackingViz",
     "references": [
-        "Unity.XR.Hands"
+        "Unity.XR.Hands",
+        "Unity.XR.OpenXR"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

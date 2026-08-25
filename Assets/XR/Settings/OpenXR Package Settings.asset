@@ -308,6 +308,26 @@ MonoBehaviour:
   company: Unity Technologies
   priority: 0
   required: 0
+--- !u!114 &-5256220592713056817
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f136c637bd7c486baafc53d53414ae87, type: 3}
+  m_Name: BodyTrackingFeature Standalone
+  m_EditorClassIdentifier: HandTrackingViz::HandTrackingViz.BodyTrackingFeature
+  m_enabled: 1
+  nameUi: Meta Inside-Out Body Tracking (publisher)
+  version: 1
+  featureIdInternal: com.dongridong.openxr.feature.body_tracking
+  openxrExtensionStrings: XR_FB_body_tracking XR_META_body_tracking_fidelity
+  company: dongridong
+  priority: 0
+  required: 0
 --- !u!114 &-5241453322264762799
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -342,6 +362,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Unity.XR.OpenXR::UnityEngine.XR.OpenXR.OpenXRSettings
   features:
   - {fileID: -8435172531453857407}
+  - {fileID: -5256220592713056817}
   - {fileID: 2480163116806026991}
   - {fileID: -6776099255898915508}
   - {fileID: 8257799399654411771}
@@ -500,6 +521,7 @@ MonoBehaviour:
   - {fileID: 5620804012095594473}
   - {fileID: 5209959823876349010}
   - {fileID: 5476129266484756812}
+  - {fileID: 7826915590482743292}
   - {fileID: -4314103716058391965}
   - {fileID: 8726643791397164912}
   - {fileID: -6294421670362110670}
@@ -1423,6 +1445,26 @@ MonoBehaviour:
   featureIdInternal: com.unity.openxr.feature.input.metaquestplus
   openxrExtensionStrings: XR_META_touch_controller_plus
   company: Unity
+  priority: 0
+  required: 0
+--- !u!114 &7826915590482743292
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f136c637bd7c486baafc53d53414ae87, type: 3}
+  m_Name: BodyTrackingFeature Android
+  m_EditorClassIdentifier: HandTrackingViz::HandTrackingViz.BodyTrackingFeature
+  m_enabled: 1
+  nameUi: Meta Inside-Out Body Tracking (publisher)
+  version: 1
+  featureIdInternal: com.dongridong.openxr.feature.body_tracking
+  openxrExtensionStrings: XR_FB_body_tracking XR_META_body_tracking_fidelity
+  company: dongridong
   priority: 0
   required: 0
 --- !u!114 &8257799399654411771

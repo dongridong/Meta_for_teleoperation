@@ -3,8 +3,9 @@
 # Meta_for_teleoperation
 
 **Meta Quest(Horizon OS)용 Unity 앱.** Passthrough 화면 위에 손(hand tracking)을
-시각화하고, HMD·양손(21 landmark)·컨트롤러의 pose/입력 상태를 매 프레임
-TCP로 PC에 실시간 스트리밍한다. 헤드셋이 서버, PC가 클라이언트다.
+시각화하고, HMD·양손(21 landmark)·컨트롤러의 pose/입력 상태와 상체 스켈레톤
+(18관절, Meta Inside-Out Body Tracking)을 매 프레임 TCP로 PC에 실시간
+스트리밍한다. 헤드셋이 서버, PC가 클라이언트다.
 
 ```
 Meta Quest (Unity APK)  ──TCP :5555 (NDJSON)──▶  PC (subscriber / 로봇 제어 등)
@@ -23,8 +24,8 @@ Meta Quest (Unity APK)  ──TCP :5555 (NDJSON)──▶  PC (subscriber / 로�
 
 퍼블리셔(`PoseFramePublisher`)는 `SampleScene`의 `PosePublisher` 오브젝트로 씬에
 이미 배선돼 있어 수동 작업이 필요 없고, 갓 빌드한 APK가 바로 송신을 시작한다.
-필요한 권한(`INTERNET`, `com.oculus.permission.HAND_TRACKING`)은 빌드 시
-매니페스트에 자동 주입된다.
+필요한 권한(`INTERNET`, `com.oculus.permission.HAND_TRACKING`,
+`com.oculus.permission.BODY_TRACKING`)은 빌드 시 매니페스트에 자동 주입된다.
 
 **수신 테스트** (PC, 표준 라이브러리만 사용):
 
@@ -34,15 +35,73 @@ python Tools/subscriber.py --host <헤드셋IP> --port 5555
 
 헤드셋 IP는 기기의 Wi-Fi 설정에서 확인하고, PC와 같은 네트워크에 있어야 한다.
 
+## 실기 스트림 검증
+
+`Tools/skeleton_viewer.py`는 발행되는 상태 전체(상체 스켈레톤·양손·HMD·컨트롤러)를
+3D로 그리면서 불변식을 실시간으로 검사한다. 표준 라이브러리(tkinter)만 쓰며 numpy·
+matplotlib가 필요 없다.
+
+```bash
+python Tools/skeleton_viewer.py --host <헤드셋IP> --port 5555
+```
+
+스켈레톤이 내 움직임을 따라오는 걸 보는 것만으로는 증명되는 게 적다 — 쿼터니언 기저
+변환이 틀렸거나 관절 인덱스가 뒤바뀌어도 "따라 움직이는 무언가"는 그려진다. 그래서
+우측 패널은 **상수여야 하는 값**들을 추적하고 각각이 얼마나 흔들렸는지(`spread`)를
+보여준다:
+
+| 검사 | 값이 나쁘면 |
+| --- | --- |
+| 위팔 / 아래팔 / 어깨 너비 | 스켈레톤은 강체다. 움직이는 동안 spread가 커지면 그 두 관절이 우리가 생각한 관절이 아니라는 뜻 |
+| `body↔hand` (손목 비틀림 ↔ 손 랜드마크 0) | SCHEMA.md상 같은 위치여야 한다. 크거나 들쭉날쭉하면 관절 매핑 또는 접점 주장이 틀린 것 |
+| `body↔hmd`, `body↔ctrl` | 0은 아니지만 **안정적**이어야 한다. 값이 떠돌면 소스들이 같은 프레임에 있지 않다는 뜻 |
+| 쿼터니언 norm | 1.000이어야 한다. 아니면 회전이 와이어에서 깨지고 있다 |
+| 팔 체인 A vs B | 부모 순서가 정말 `CHEST → SCAPULA → SHOULDER → ARM_UPPER`인지 실측으로 판정 — SCHEMA.md에서 유일하게 OpenXR 헤더로 확증하지 못한 부분 |
+
+조작: 좌드래그 궤도, 휠 줌, 우드래그 팬, `a` 관절 축, `r` 리셋, `space` 일시정지, `q` 종료.
+
+**헤드셋 없이 먼저 시험해 볼 것.** `Tools/mock_publisher.py`가 강체 애니메이션 모델로
+같은 와이어 포맷을 내보내므로, 모든 검사가 ~0 cm로 나와야 한다:
+
+```bash
+python Tools/mock_publisher.py --port 5556
+python Tools/skeleton_viewer.py --host 127.0.0.1 --port 5556
+```
+
+이게 기준선이다 — 목에서는 전부 "ok"인데 실기에서 흔들린다면 원인은 뷰어가 아니라
+기기 데이터 쪽이다. `--fault stretch|nonunit|swap`은 한 번에 하나씩 일부러 고장을
+주입하므로, 각 검사가 실제로 발동하는지 먼저 눈으로 확인하고 신뢰하면 된다.
+
 ## 데이터 스키마
 
 한 줄 = 한 프레임. `timestamp` / `frame` / `hmd` / `hands`(손, 21 landmark) /
-`controllers`(컨트롤러)로 구성된다. 필드별 정의·좌표계·생략 규칙은:
+`controllers`(컨트롤러) / `body`(상체 18관절)로 구성된다. 필드별 정의·좌표계·생략
+규칙은:
 
 **→ [SCHEMA_KOR.md](SCHEMA_KOR.md)**
 
-(Galaxy_with_hands 저장소와 **동일한 스키마**를 쓴다 — 수신측 코드는 두 헤드셋을
-구분 없이 그대로 재사용할 수 있다.)
+(Galaxy_with_hands 저장소 스키마의 **상위 집합**이다 — 그쪽이 내보내는 필드는 전부
+동일하므로 수신측 코드는 두 헤드셋을 구분 없이 그대로 재사용할 수 있다. 추가된 것은
+`body` 하나뿐이며, Inside-Out Body Tracking은 Quest 하드웨어 기능이라 Galaxy에는
+대응물이 없다. Galaxy용으로 작성된 수신기는 이 키를 그냥 무시하면 된다.)
+
+## 상체 (Inside-Out Body Tracking)
+
+`body`는 헤드셋 자체 카메라로 추적한 몸통·팔 18관절 스켈레톤이다. `hands`,
+`controllers`와 나란히 놓인 **세 번째 독립 소스**로, 한 프레임에서 이들의 어떤
+조합이든 추적 상태일 수 있다.
+
+| 항목 | 값 |
+| --- | --- |
+| 소스 | Horizon OS 런타임, OpenXR `XR_FB_body_tracking` 경유 |
+| 정밀도 | `XR_META_body_tracking_fidelity`로 High(IOBT) 요청. 실제로 승인된 모드가 와이어에 표시됨 |
+| 관절 수 | 18 — `XrBodyJointFB` 인덱스 0–17 (몸통 + 팔). 손 관절 18–69는 `hands`가 이미 더 높은 정밀도로 싣고 있어 제외 |
+| 권한 | `com.oculus.permission.BODY_TRACKING`, 최초 사용 시 런타임 요청. 사용자가 수락하기 전까지는 `tracked: false`로 발행 |
+| 의존성 | **추가 없음.** 이 프로젝트 자체 OpenXR 피처(`BodyTrackingFeature`)로 확장을 직접 호출 — Meta XR SDK 미사용 |
+| 토글 | `PosePublisher` 오브젝트의 `publishBody`. 꺼도 `body` 필드는 `tracked: false`로 남아 스키마 형태는 불변 |
+
+바디 트래킹이 없는 기기에서는 `body.tracked: false`로만 나오며, 손 / HMD /
+컨트롤러는 전혀 영향받지 않는다.
 
 ## 기기 매핑
 
@@ -67,7 +126,8 @@ python Tools/subscriber.py --host <헤드셋IP> --port 5555
 Unity로 열면 자동 복원된다. 첫 오픈 시 패키지 임포트가 끝나면 한 번만 확인:
 **Project Settings ▸ XR Plug-in Management ▸ Android**에서 `OpenXR` 로더와
 `Hand Tracking Subsystem` + `Meta Quest Support` + `AR Session`/`AR Camera`(Meta)
-기능이 켜져 있는지.
++ `Meta Inside-Out Body Tracking (publisher)` 기능이 켜져 있는지.
+(`Tools ▸ Hand Tracking Viz ▸ 3. Full Setup`이 이들을 멱등하게 모두 켜준다.)
 
 ### 빌드 방법
 
@@ -81,12 +141,24 @@ Unity로 열면 자동 복원된다. 첫 오픈 시 패키지 임포트가 끝�
 - **두 APK 한 번에** (권장):
   ```bash
   UNITY=~/Unity/Hub/Editor/6000.2.12f1/Editor/Unity ./Tools/build_all.sh
-  # → Build/Meta_with_hands.apk        (com.dongridong.metahand)
-  # → Build/Meta_with_controllers.apk  (com.dongridong.metacontroller)
+  # → Build/Meta_with_hands.apk        (com.dongridong.metahand,       "Meta with hands")
+  # → Build/Meta_with_controllers.apk  (com.dongridong.metacontroller, "Meta with controller")
   ```
-  두 APK는 패키지명이 달라 헤드셋에 **나란히 설치**된다. 제품 정체성은 빌드 인자
+  두 APK는 패키지명이 달라 헤드셋에 **나란히 설치**되고, 앱 이름은 각각
+  **Meta with hands** / **Meta with controller**로 표시된다(`productName` 기준.
+  APK 파일명은 언더스코어 유지). 제품 정체성은 빌드 인자
   (`-productName` / `-applicationIdentifier`)로 주입되고 빌드 후 원복되므로
   `ProjectSettings.asset`은 더러워지지 않는다.
+
+  **동작상** 유일한 차이는 컨트롤러 빌드에만 넘기는 `-handVisualization off`로,
+  해당 APK에서 손 스켈레톤/랜드마크 렌더링을 컴파일 단계에서 제거한다. 손 추적
+  자체는 계속 켜져 있으므로 컨트롤러를 내려놓거나 추적이 끊기면 Quest 런타임은
+  여전히 손으로 전환하는데, 이 옵션이 없으면 컨트롤러 앱에서 세션 도중 패스스루
+  위로 손 뼈대가 튀어나온다.
+
+  **발행되는 데이터는 두 APK가 동일하다.** `hands` / `controllers` / `body`는
+  변형과 무관하게 같은 방식으로 스트리밍되며([SCHEMA_KOR.md](SCHEMA_KOR.md)),
+  `-handVisualization`은 헤드셋에 무엇을 그리는지에만 영향을 준다.
 
 ### 기기에 설치
 
@@ -96,7 +168,9 @@ Unity로 열면 자동 복원된다. 첫 오픈 시 패키지 임포트가 끝�
    ```bash
    adb install -r Build/Meta_with_hands.apk
    ```
-3. 첫 실행 시 **손 추적 권한** 다이얼로그 허용.
+3. 첫 실행 시 **손 추적**·**바디 트래킹** 권한 다이얼로그 허용. 바디는 다이얼로그를
+   수락하기 전까지 `tracked: false`로 나오다가, 수락하면 재시작 없이 스스로
+   발행을 시작한다.
 
 ## 자매 저장소
 

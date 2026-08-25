@@ -12,7 +12,8 @@ namespace HandTrackingViz
 {
     /// <summary>
     /// The single publisher for the whole device state — HMD pose, both hands'
-    /// palm + 21 MediaPipe landmarks, and both controllers' pose/inputs. It
+    /// palm + 21 MediaPipe landmarks, both controllers' pose/inputs, and the
+    /// 18-joint upper-body skeleton from Meta's Inside-Out Body Tracking. It
     /// matches the wire format in SCHEMA.md exactly:
     ///
     ///   Transport : TCP server socket (this app is the server), NDJSON —
@@ -47,6 +48,10 @@ namespace HandTrackingViz
     ///   - controllers is likewise always 2 elements, [left, right]. Hands and
     ///     controllers are INDEPENDENT — both, either, or neither may be tracked
     ///     in a given frame; the receiver picks whichever source it wants.
+    ///   - body carries the upper-body skeleton as 18 joints (torso + arms), a
+    ///     third independent source on the same footing as hands and controllers.
+    ///     Its joints stop at the wrist twist because the hands are already
+    ///     published in full detail under "hands".
     ///   - Untracked HMD -> {"tracked": false}; a landmark, palm or controller
     ///     pose with "valid": false omits its position/rotation.
     ///   - Floats are formatted "0.######" (&lt;=6 decimals, InvariantCulture).
@@ -87,6 +92,14 @@ namespace HandTrackingViz
                  "not remove the \"controllers\" field, so the schema stays stable.")]
         public bool publishControllers = true;
 
+        [Header("Body (Inside-Out Body Tracking)")]
+        [Tooltip("Sample and publish the 18-joint upper-body skeleton alongside the hands. " +
+                 "Turning this off publishes the body as tracked:false — it does not remove " +
+                 "the \"body\" field, so the schema stays stable. Requires the body-tracking " +
+                 "OpenXR feature to be enabled; the user is asked for the body-tracking " +
+                 "permission on the first frame this is needed.")]
+        public bool publishBody = true;
+
         [Header("Status HUD")]
         [Tooltip("Show four head-locked dots in the top-left of the view: HMD, left, " +
                  "right (hand or controller) and receiver connection. Green = tracked / " +
@@ -108,8 +121,11 @@ namespace HandTrackingViz
         bool m_RightTracked;
         readonly ControllerData m_LeftController = new ControllerData();
         readonly ControllerData m_RightController = new ControllerData();
+        readonly BodyLandmarkProvider m_BodyProvider = new BodyLandmarkProvider();
+        readonly BodyLandmarkFrame m_Body = new BodyLandmarkFrame();
         StatusIndicator m_StatusHud;
         bool m_ControllerSamplingFailed;
+        bool m_BodySamplingFailed;
 
         // Reused each frame (built on the main thread only).
         readonly StringBuilder m_Sb = new StringBuilder(4096);
@@ -236,6 +252,28 @@ namespace HandTrackingViz
                     m_ControllerSamplingFailed = true;   // log once, not every frame
                     Debug.LogError($"[PoseFramePublisher] controller sampling failed, publishing them as " +
                                    $"untracked from here on. Hands/HMD are unaffected. {e}");
+                }
+            }
+
+            // The body is a third independent source, sampled on the same terms as
+            // the controllers: unconditionally, so an untracked frame says so, and
+            // guarded so that trouble in the body-tracking extension costs the body
+            // alone rather than aborting Update() and silently killing the stream.
+            try
+            {
+                if (publishBody)
+                    m_BodyProvider.TryUpdate(trackingOrigin, m_Body);
+                else
+                    m_Body.isTracked = false;
+            }
+            catch (Exception e)
+            {
+                m_Body.isTracked = false;
+                if (!m_BodySamplingFailed)
+                {
+                    m_BodySamplingFailed = true;   // log once, not every frame
+                    Debug.LogError($"[PoseFramePublisher] body sampling failed, publishing the body as " +
+                                   $"untracked from here on. Hands/HMD/controllers are unaffected. {e}");
                 }
             }
 
@@ -395,7 +433,13 @@ namespace HandTrackingViz
             AppendController(sb, "left", m_LeftController);
             sb.Append(',');
             AppendController(sb, "right", m_RightController);
-            sb.Append(']');
+            sb.Append("],");
+
+            // body: the upper-body skeleton, last so that every field a pre-body
+            // receiver knows keeps its position in the object. Also additive — a
+            // consumer that only reads hands/controllers is unaffected.
+            sb.Append("\"body\":");
+            AppendBody(sb, m_Body);
 
             sb.Append('}');
             sb.Append('\n');   // NDJSON line terminator
@@ -475,6 +519,54 @@ namespace HandTrackingViz
               .Append('}');
 
             sb.Append('}');
+        }
+
+        // The upper body: 18 joints (torso + arms), plus how the runtime is tracking
+        // them. Same contract as hands and controllers — an untracked body is
+        // {"tracked":false} with nothing else, and a joint that could not be located
+        // this frame omits its position/rotation.
+        //
+        // "fidelity" tells the receiver WHICH tracking mode produced these joints:
+        // "high" is Meta's Inside-Out Body Tracking (headset cameras watching the
+        // real arms), "low" is the inferred fallback, and "unspecified" means the
+        // runtime chose without being asked. A receiver that cares about arm accuracy
+        // should treat "low" as a much weaker signal than "high".
+        static void AppendBody(StringBuilder sb, BodyLandmarkFrame body)
+        {
+            sb.Append("{\"tracked\":").Append(body.isTracked ? "true" : "false");
+            if (!body.isTracked) { sb.Append('}'); return; }
+
+            sb.Append(",\"fidelity\":\"").Append(FidelityName(body.fidelity)).Append('"');
+            sb.Append(",\"confidence\":").Append(body.confidence.ToString(NumFmt, Inv));
+
+            // joints: exactly 18, objects { "i", "valid", ["position", "rotation"] } —
+            // deliberately the same element shape as a hand landmark.
+            sb.Append(",\"joints\":[");
+            for (int i = 0; i < BodyJointMapping.JointCount; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append("{\"i\":").Append(i.ToString(Inv))
+                  .Append(",\"valid\":").Append(body.valid[i] ? "true" : "false");
+                if (body.valid[i])
+                {
+                    sb.Append(",\"position\":"); AppendVec3(sb, body.positions[i]);
+                    sb.Append(",\"rotation\":"); AppendQuat(sb, body.rotations[i]);
+                }
+                sb.Append('}');
+            }
+            sb.Append(']');
+
+            sb.Append('}');
+        }
+
+        static string FidelityName(BodyTrackingFidelity fidelity)
+        {
+            switch (fidelity)
+            {
+                case BodyTrackingFidelity.High: return "high";
+                case BodyTrackingFidelity.Low: return "low";
+                default: return "unspecified";
+            }
         }
 
         // A pose carried as { "valid": bool, ["position", "rotation"] } — the

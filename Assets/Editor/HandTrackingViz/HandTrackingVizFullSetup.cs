@@ -37,6 +37,7 @@ namespace HandTrackingViz.EditorTools
             "UnityEngine.XR.OpenXR.Features.Meta.ARCameraFeature",              // Meta Quest: Camera (Passthrough)
             "UnityEngine.XR.OpenXR.Features.Meta.ARSessionFeature",             // Meta Quest: Session (required by the AR/passthrough features)
             "UnityEngine.XR.OpenXR.Features.CompositionLayers.OpenXRCompositionLayersFeature", // Composition Layers Support (required because the com.unity.xr.compositionlayers package is present)
+            "HandTrackingViz.BodyTrackingFeature",                              // Meta Inside-Out Body Tracking (this project's own feature; publishes the upper-body skeleton)
             // Interaction profiles — keep OpenXR project validation happy / allow controller fallback.
             "UnityEngine.XR.OpenXR.Features.Interactions.HandCommonPosesInteraction",
             "UnityEngine.XR.OpenXR.Features.Interactions.OculusTouchControllerProfile",

@@ -86,6 +86,11 @@ The hand-tracking Android permission (`com.oculus.permission.HAND_TRACKING`) and
 for the wrist+middle-MCP definition). Spheres, bone lines and palm axes are created procedurally, so
 nothing else needs wiring.
 
+`HandVisualizer` is compiled out of the controller APK (`-handVisualization off`, see
+`Assets/Editor/BuildAndroid.cs`): hand tracking stays on there, so without it the skeleton would
+appear whenever a controller is put down. That switch affects rendering only — `PoseFramePublisher`
+publishes the hands identically in both builds.
+
 > Still manual (Unity has no stable public API for it): enable the OpenXR features in
 > **Project Settings ▸ XR Plug-in Management ▸ OpenXR (Android)** — the **Meta Quest** feature group,
 > **Hand Tracking Subsystem**, and **Passthrough**. See section 3.
