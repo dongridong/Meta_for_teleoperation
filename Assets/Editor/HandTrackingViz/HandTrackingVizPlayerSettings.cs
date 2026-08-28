@@ -42,8 +42,16 @@ namespace HandTrackingViz.EditorTools
             // Recommended for XR + URP.
             PlayerSettings.colorSpace = ColorSpace.Linear;
 
+            // Require the INTERNET permission rather than letting Unity infer it.
+            // The app is a TCP server (PoseFramePublisher) and, in the ZED build, a
+            // WebRTC client; both are dead in the water without it. Inference has no
+            // business deciding that — and com.unity.webrtc's build processor warns
+            // about exactly this case.
+            PlayerSettings.Android.forceInternetPermission = true;
+
             AssetDatabase.SaveAssets();
-            Debug.Log("[HandTrackingViz] Android player settings configured: IL2CPP, ARM64, min SDK 32, Linear color space.");
+            Debug.Log("[HandTrackingViz] Android player settings configured: IL2CPP, ARM64, min SDK 32, " +
+                      "Linear color space, INTERNET permission required.");
         }
 
         [MenuItem("Tools/Hand Tracking Viz/Setup Everything (Scene + Android)")]

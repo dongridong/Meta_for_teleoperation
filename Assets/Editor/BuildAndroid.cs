@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -24,6 +25,10 @@ using UnityEngine;
 //         -productName "Meta with controller" \
 //         -applicationIdentifier com.dongridong.metacontroller \
 //         -handVisualization off
+//   ... -executeMethod BuildAndroid.Build -output Build/Meta_with_zed.apk \
+//         -productName "Meta with ZED" \
+//         -applicationIdentifier com.dongridong.metazed \
+//         -handVisualization off -videoMode zed
 //
 // productName is the label the headset shows under the app icon, so it is a
 // human-readable name with spaces; the default output file name replaces those
@@ -37,15 +42,28 @@ using UnityEngine;
 // PUBLISHED DATA IS UNAFFECTED: the "hands" field of the TCP stream is
 // identical in both APKs (see SCHEMA.md); only the rendering goes away.
 //
+// -videoMode zed turns this into the ZED teleoperation build: the app draws the
+// robot camera's stereo stream on a world-locked panel instead of passthrough.
+//
+// The rig lives in the same scene as everything else and disables itself in
+// Awake unless its define is set, so the hands and controller APKs are
+// unaffected by its presence. PUBLISHED DATA IS AGAIN UNAFFECTED: all three
+// APKs emit the identical TCP stream, IOBT body and controllers included, and
+// the ZED build publishes it while the video is running.
+//
 // The committed identity is restored after the build, so an overridden build
-// never leaves ProjectSettings.asset dirty. -handVisualization needs no such
-// restore: it is a player-only scripting define that never touches project
-// settings in the first place.
+// never leaves ProjectSettings.asset dirty. Neither -handVisualization nor
+// -videoMode needs such a restore: they are player-only scripting defines that
+// never touch project settings in the first place.
 public static class BuildAndroid
 {
     // Player-only scripting define that strips hand visualization. Gated on in
     // HandVisualizer; see -handVisualization above.
     const string NoHandVisualizationDefine = "HTV_NO_HAND_VISUALIZATION";
+
+    // Player-only scripting define that activates the ZED video rig. Gated on in
+    // ZedPanelController; see -videoMode above.
+    const string ZedVideoDefine = "HTV_ZED_VIDEO";
 
     [MenuItem("Build/Android APK")]
     public static void Build()
@@ -70,6 +88,14 @@ public static class BuildAndroid
             throw new Exception($"[BuildAndroid] -handVisualization must be \"on\" or \"off\", " +
                                 $"got \"{handVisualization}\".");
         bool handVisualizationEnabled = handVisualization == "on";
+
+        // Same treatment, same reason: a typo must not quietly produce an APK that
+        // shows passthrough where the operator expects the robot's camera.
+        string videoMode = (ArgValue("-videoMode") ?? "off").ToLowerInvariant();
+        if (videoMode != "zed" && videoMode != "off")
+            throw new Exception($"[BuildAndroid] -videoMode must be \"zed\" or " +
+                                $"\"off\", got \"{videoMode}\".");
+        bool zedVideoEnabled = videoMode == "zed";
 
         // Per-build identity overrides (optional). Capture the committed values
         // first so they can be restored after the build — the overrides are for
@@ -98,6 +124,13 @@ public static class BuildAndroid
         Debug.Log($"[BuildAndroid] productName: {PlayerSettings.productName} " +
                   $"applicationIdentifier: {PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android)}");
         Debug.Log($"[BuildAndroid] handVisualization: {handVisualization}");
+        Debug.Log($"[BuildAndroid] videoMode: {videoMode}");
+
+        var extraDefines = new List<string>();
+        if (!handVisualizationEnabled)
+            extraDefines.Add(NoHandVisualizationDefine);
+        if (zedVideoEnabled)
+            extraDefines.Add(ZedVideoDefine);
 
         var options = new BuildPlayerOptions
         {
@@ -107,10 +140,9 @@ public static class BuildAndroid
             targetGroup = BuildTargetGroup.Android,
             options = BuildOptions.None,
             // Player-only: applies to this build's script compilation and is
-            // never written back to ProjectSettings.asset.
-            extraScriptingDefines = handVisualizationEnabled
-                ? null
-                : new[] { NoHandVisualizationDefine },
+            // never written back to ProjectSettings.asset. Collected into a list so
+            // the flags compose — the ZED build is also a controller build.
+            extraScriptingDefines = extraDefines.Count == 0 ? null : extraDefines.ToArray(),
         };
 
         BuildSummary summary;

@@ -12,6 +12,11 @@ The headset is the server; the PC is the client.
 Meta Quest (Unity APK)  ──TCP :5555 (NDJSON)──▶  PC (subscriber / robot control, etc.)
 ```
 
+A third build variant additionally **receives** the robot's ZED X Mini stereo
+camera over WebRTC and draws it on a world-locked panel, replacing passthrough —
+see [ZED stereo video](#zed-stereo-video-teleoperation-build). It publishes the
+exact same TCP stream while doing so.
+
 ## Transport
 
 | Item | Value |
@@ -146,16 +151,17 @@ plus the `Hand Tracking Subsystem` + `Meta Quest Support` +
         -buildTarget Android -executeMethod BuildAndroid.Build \
         -output Build/Meta_with_hands.apk
   ```
-- **Both APKs at once** (recommended):
+- **All three APKs at once** (recommended):
   ```bash
   UNITY=~/Unity/Hub/Editor/6000.2.12f1/Editor/Unity ./Tools/build_all.sh
   # → Build/Meta_with_hands.apk        (com.dongridong.metahand,       "Meta with hands")
   # → Build/Meta_with_controllers.apk  (com.dongridong.metacontroller, "Meta with controller")
+  # → Build/Meta_with_zed.apk          (com.dongridong.metazed,        "Meta with ZED")
   ```
-  The two APKs have different package names, so they install **side by side**
-  on the headset, where they appear as **Meta with hands** and
-  **Meta with controller** (the `productName`; the APK file names stay
-  underscored). Product identity is injected via build arguments
+  The APKs have different package names, so they install **side by side**
+  on the headset, where they appear as **Meta with hands**,
+  **Meta with controller** and **Meta with ZED** (the `productName`; the APK
+  file names stay underscored). Product identity is injected via build arguments
   (`-productName` / `-applicationIdentifier`) and restored after the build,
   so `ProjectSettings.asset` never gets dirty.
 
@@ -166,10 +172,15 @@ plus the `Hand Tracking Subsystem` + `Meta Quest Support` +
   tracking — without this, a hand skeleton would pop up over passthrough
   mid-session in the controller app.
 
-  **The published data is identical in both APKs.** `hands`, `controllers` and
-  `body` are streamed the same way regardless of the variant (see
-  [SCHEMA.md](SCHEMA.md)); `-handVisualization` only affects what is drawn on
-  the headset.
+  The other behavioural flag is `-videoMode zed`, passed only to the third
+  build: it activates the ZED video rig, which replaces passthrough with the
+  robot camera's stereo stream.
+
+  **The published data is identical in all three APKs.** `hands`, `controllers`
+  and `body` are streamed the same way regardless of the variant (see
+  [SCHEMA.md](SCHEMA.md)); `-handVisualization` and `-videoMode` only affect what
+  is drawn on the headset. **[SCHEMA.md](SCHEMA.md) is unchanged by the video
+  feature** — nothing was added to or removed from the wire format.
 
 ### Installing on the device
 
@@ -183,6 +194,90 @@ plus the `Hand Tracking Subsystem` + `Meta Quest Support` +
 3. On first launch, allow the **hand tracking** and **body tracking** permission
    dialogs. Body tracking stays `tracked: false` until its dialog is accepted,
    then starts publishing on its own — no restart needed.
+
+## ZED stereo video (teleoperation build)
+
+`Meta_with_zed.apk` adds an incoming video path: the ZED X Mini on the robot,
+served from a Jetson over **WebRTC (WHEP)**, drawn on a **world-locked stereo
+panel**. The pose/IOBT publishing described above runs unchanged alongside it —
+the two paths share nothing but the frame clock, and live in separate assemblies
+so a video failure cannot take the TCP stream down.
+
+The full specification, including the reasoning behind each choice, is in
+[UNITY_PORT_PROMPT.md](UNITY_PORT_PROMPT.md). The short version:
+
+| Property | Value | Why |
+| --- | --- | --- |
+| Transport | WebRTC, WHEP signalling (one HTTPS POST) | RTSP is unstable on Android and HLS adds 2–5 s of latency |
+| Stream | SBS 3840×1200 @30 fps, H.264 baseline | One picture holds both eyes; baseline for Android hardware decode |
+| Panel | **Lazy follow** — world-locked inside a 15° deadzone, then eased toward the gaze | The camera does not follow the operator's head, so a head-locked image would swing with every head turn. The deadzone keeps small movements genuinely world-locked; without any follow at all the panel simply leaves the view |
+| Angular size | `fillView` on by default — magnified (~1.9x on a Quest 3) to the largest size both eyes see whole. Set `fillView = false` for **1:1**, one camera degree to one headset degree | 1:1 is what keeps hand-eye coordination honest; magnifying trades that, and half the angular resolution, for a bigger picture |
+| Convergence | HIT shift from the measured baseline and `fx` | Without it, parallax at infinity is zero and the whole scene floats forward |
+| Calibration | Fetched from the Jetson's `zedx.json` at startup | These are per-unit measured values, not spec-sheet numbers |
+| Surround | Very dark neutral grey with a faint static grid, world-locked, plus feathered panel edges | The panel covers only part of the field of view; a hard black rectangle is what makes that uncomfortable, not the area |
+
+**On magnification.** The camera sees 73.9°×50.4° and the headset shows roughly
+110°×96°, so at 1:1 the picture occupies about half the view and the rest is
+border. `fillView` blows it up to fill the display horizontally (~1.9×), which is
+the default because the border is hard to work with in practice. Be clear about
+the trade, though: **magnifying shows no more of the world.** The camera's field
+of view is fixed, so the same pixels are spread over twice the angle — objects
+look larger than life and detail drops from roughly 26 px/° to 14 px/°. If
+hand-eye coordination feels off, or the image looks soft, `fillView = false`
+restores the 1:1 mapping the rest of the design assumes. The only way to actually
+see more is a wider lens unit (appendix A of the spec).
+
+### Running it
+
+The Jetson must be serving the stream, and the headset must be on the same LAN:
+
+```bash
+# on the Jetson
+./zedx_webrtc.sh --xr
+```
+
+| Endpoint | Purpose |
+| --- | --- |
+| `https://<jetson>:8443/whep` | What the app connects to |
+| `https://<jetson>:8443/zedx.json` | Measured calibration, read at startup |
+| `https://<jetson>:8443/` | WebXR reference page — the ground truth to compare the app against |
+| `https://<jetson>:8443/timer.html` | Millisecond timer for latency measurement |
+
+The Jetson host and port are Inspector fields on `ZedPanelController` (default
+`192.168.20.131:8443`). Its HTTPS certificate is self-signed, which
+`UnityWebRequest` rejects by default and *silently*; the app trusts it for that
+one host only (`ZedHttp`). The app retries the handshake every few seconds, so
+starting the headset before the robot is fine.
+
+```bash
+adb install -r Build/Meta_with_zed.apk
+adb logcat -s Unity | grep -E "ZedStream|PoseFramePublisher"
+```
+
+### Checking it
+
+Beyond "an image appears":
+
+- **Eye order** — hold a near object and close one eye at a time. Seen with the
+  left eye it should sit to the **right** of the background. Reversed depth
+  reads as "looks odd", not as "no stereo", so it is easy to miss.
+- **Angular size** — with `fillView = false`, a known object should look the same
+  size as it does with the naked eye. With it on it will look about 1.9× too big;
+  that is the trade, not a bug.
+- **Follow behaviour** — small head movements leave the panel where it is; a
+  deliberate turn drags it after you, arriving damped rather than locked to
+  your head. Set `followHead = false` on `ZedStereoPanel` for the
+  specification's strictly world-locked panel.
+- **Both at once** — with video running, `python3 Tools/subscriber.py --host
+  <headset-ip>` must still show `body` and `controllers` flowing at the usual
+  rate.
+- **Latency** — point the camera at `timer.html` and photograph it together with
+  the headset view; compare the two numbers against the WebXR reference page.
+
+Panel distance, follow tuning (`followDeadzoneDeg`, `followSettleDeg`,
+`followSharpness`), feather widths and the rest frame are serialized fields on
+the rig, not in-headset controls: the controller sticks are teleoperation input
+that is published to the robot, so they are read and never consumed here.
 
 ## Sister repository
 

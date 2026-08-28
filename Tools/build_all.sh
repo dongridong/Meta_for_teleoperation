@@ -14,8 +14,8 @@ UNITY="${UNITY:?set UNITY to the Unity 6000.2.12f1 executable, e.g. UNITY=~/Unit
 OUT="$PROJECT/Build"
 
 build() {
-  local out="$1" product="$2" appid="$3" handviz="$4"
-  echo ">>> building $product ($appid, handVisualization=$handviz) -> $out"
+  local out="$1" product="$2" appid="$3" handviz="$4" videomode="$5"
+  echo ">>> building $product ($appid, handVisualization=$handviz, videoMode=$videomode) -> $out"
   "$UNITY" -quit -batchmode -nographics \
     -projectPath "$PROJECT" \
     -buildTarget Android \
@@ -24,6 +24,7 @@ build() {
     -productName "$product" \
     -applicationIdentifier "$appid" \
     -handVisualization "$handviz" \
+    -videoMode "$videomode" \
     -logFile -
 }
 
@@ -33,10 +34,20 @@ build() {
 # redundant but keeps both invocations symmetric and self-documenting — the same
 # reason handVisualization=on is spelled out below even though it is the default.
 #
-# handVisualization is the one FUNCTIONAL difference between the two APKs: the
-# controller build does not draw the hand skeleton, so putting a controller down
-# no longer makes hands appear. Both APKs publish identical data over TCP.
-build "$OUT/Meta_with_hands.apk"       "Meta with hands"      com.dongridong.metahand       on
-build "$OUT/Meta_with_controllers.apk" "Meta with controller" com.dongridong.metacontroller off
+# handVisualization is the one FUNCTIONAL difference between the first two APKs:
+# the controller build does not draw the hand skeleton, so putting a controller
+# down no longer makes hands appear.
+#
+# The third is the teleoperation build: instead of passthrough it shows the ZED X
+# Mini's stereo stream from the robot, received over WebRTC/WHEP and drawn on a
+# world-locked panel at 1:1 angular size. It needs the Jetson serving that stream
+# (`./zedx_webrtc.sh --xr`) and the headset on the same LAN.
+#
+# ALL THREE publish identical data over TCP — HMD, hands, controllers and the
+# IOBT body skeleton. The ZED build publishes it while the video is running; the
+# video path and the publisher share nothing but the frame clock.
+build "$OUT/Meta_with_hands.apk"       "Meta with hands"      com.dongridong.metahand       on  off
+build "$OUT/Meta_with_controllers.apk" "Meta with controller" com.dongridong.metacontroller off off
+build "$OUT/Meta_with_zed.apk"         "Meta with ZED"        com.dongridong.metazed        off zed
 
 echo ">>> done. APKs in $OUT"

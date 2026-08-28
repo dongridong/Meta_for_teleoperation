@@ -49,6 +49,11 @@ namespace HandTrackingViz.EditorTools
             int failures = 0;
 
             failures += Step("Scene setup (XR Origin + passthrough camera + HandVisualizer)", SetupSceneStep);
+            // The ZED rig goes into the same scene. It is inert unless the build
+            // defines HTV_ZED_VIDEO (BuildAndroid's -videoMode zed), so adding it
+            // unconditionally costs the hands and controller builds nothing.
+            failures += Step("ZED video rig (panel + rest frame + WHEP client)", () =>
+                ZedStream.EditorTools.ZedSceneSetup.SetupRig());
             failures += Step("Android player settings (IL2CPP / ARM64 / minSDK32 / Linear)", () =>
                 HandTrackingVizPlayerSettings.Configure());
             failures += Step("Register OpenXR loader (Android + Standalone)", () =>
