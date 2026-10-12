@@ -190,6 +190,12 @@ button:
 
 ## `body` — upper-body skeleton (Inside-Out Body Tracking)
 
+![Body joint mapping](docs/images/body_keymap.png)
+
+*The number on each joint is its index `i` in `body.joints`. The figure is drawn
+from behind, so the wearer's left arm is on the left; joint positions are
+schematic, not measured.*
+
 A single object (not an array — there is only one body). Like `controllers`, it is
 a **completely independent source**: a frame may carry a tracked body with
 untracked hands, or the reverse, or both, or neither.

@@ -112,11 +112,13 @@ HMD and controllers are unaffected.
 ## Device mapping
 
 Which physical input becomes which JSON field, and how the 21 hand landmarks
-are numbered:
+and the 18 upper-body joints are numbered:
 
 ![HMD / controller key mapping](docs/images/meta_keymap.jpg)
 
 ![Hand landmark / palm mapping](docs/images/hands_keymap.jpg)
+
+![Body joint mapping](docs/images/body_keymap.png)
 
 ## Building the APK
 
