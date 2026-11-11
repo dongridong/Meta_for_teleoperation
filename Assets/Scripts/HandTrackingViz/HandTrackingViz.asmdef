@@ -3,7 +3,10 @@
     "rootNamespace": "HandTrackingViz",
     "references": [
         "Unity.XR.Hands",
-        "Unity.XR.OpenXR"
+        "Unity.XR.OpenXR",
+        "Unity.XR.ARFoundation",
+        "UnityEngine.UI",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

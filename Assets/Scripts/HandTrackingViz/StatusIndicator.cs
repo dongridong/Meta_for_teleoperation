@@ -5,8 +5,9 @@ namespace HandTrackingViz
     // ====================================================================
     // StatusIndicator
     // --------------------------------------------------------------------
-    // Head-locked HUD of four 0.5 cm dots pinned to the top-left of the
-    // operator's view. Fixed order, left to right:
+    // Head-locked HUD of four small dots pinned to the top-centre of the
+    // operator's view, just below the control panel's gear button. Fixed
+    // order, left to right:
     //
     //   1. HMD      — head pose is live this frame
     //   2. LEFT     — left hand OR left controller tracked
@@ -24,11 +25,20 @@ namespace HandTrackingViz
     public sealed class StatusIndicator : MonoBehaviour
     {
         private const int DotCount = 4;
-        private const float Distance = 0.5f;         // m in front of the camera
-        private const float DotDiameter = 0.005f;    // 0.5 cm
-        private const float Spacing = 0.012f;        // dot centre-to-centre
-        private const float GroupGap = 0.006f;       // extra gap before RECEIVER
-        private static readonly Vector3 TopLeft = new Vector3(-0.14f, 0.09f, Distance);
+
+        /// <summary>m in front of the camera. Shared with ControlPanel, whose
+        /// gear and panel are laid out around this row on the same plane, so
+        /// the whole cluster sits at one depth and the gear is in poke reach.</summary>
+        public const float Distance = 0.40f;
+
+        /// <summary>Centre of the dot row in the camera's local x/y (m):
+        /// horizontally centred, ~10 deg above the line of sight.</summary>
+        public static readonly Vector2 RowCenter = new Vector2(0f, 0.072f);
+
+        // Same angular size as the original 0.5 m layout (scaled by 0.8).
+        private const float DotDiameter = 0.004f;
+        private const float Spacing = 0.0096f;       // dot centre-to-centre
+        private const float GroupGap = 0.0048f;      // extra gap before RECEIVER
 
         private static readonly Color Green = new Color(0.1f, 0.9f, 0.2f);
         private static readonly Color Red = new Color(0.95f, 0.15f, 0.1f);
@@ -57,13 +67,16 @@ namespace HandTrackingViz
             greenMat = MakeUnlit(Green);
             redMat = MakeUnlit(Red);
 
+            // Centre the row (including the RECEIVER gap) on RowCenter.x.
+            float rowWidth = (DotCount - 1) * Spacing + GroupGap;
+            float x0 = RowCenter.x - rowWidth * 0.5f;
             for (int i = 0; i < DotCount; i++)
             {
                 var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 sphere.name = DotNames[i];
                 sphere.transform.SetParent(transform, false);
-                float x = TopLeft.x + i * Spacing + (i == DotCount - 1 ? GroupGap : 0f);
-                sphere.transform.localPosition = new Vector3(x, TopLeft.y, TopLeft.z);
+                float x = x0 + i * Spacing + (i == DotCount - 1 ? GroupGap : 0f);
+                sphere.transform.localPosition = new Vector3(x, RowCenter.y, Distance);
                 sphere.transform.localScale = Vector3.one * DotDiameter;
 
                 // Colliders are useless here and just cost physics work.
