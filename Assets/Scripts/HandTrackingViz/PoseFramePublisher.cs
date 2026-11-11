@@ -101,10 +101,18 @@ namespace HandTrackingViz
         public bool publishBody = true;
 
         [Header("Status HUD")]
-        [Tooltip("Show four head-locked dots in the top-left of the view: HMD, left, " +
+        [Tooltip("Show four head-locked dots in the top-centre of the view: HMD, left, " +
                  "right (hand or controller) and receiver connection. Green = tracked / " +
                  "connected, red = missing.")]
         public bool showStatusHud = true;
+
+        [Header("Control panel")]
+        [Tooltip("Show a gear button above the status dots. It opens a panel just below " +
+                 "the dots with two switches: IP (shows <headset-ip>:<port> for receivers " +
+                 "to connect to) and 3D view (turns passthrough off for a ZED/C1 stereo " +
+                 "source, whose IP is entered on a keypad). Both start off. Poke with a " +
+                 "fingertip or point a controller and pull the trigger.")]
+        public bool showControlPanel = true;
 
         [Header("Debug")]
         public bool logPublishCount = false;
@@ -171,6 +179,8 @@ namespace HandTrackingViz
         {
             if (showStatusHud && hmdCamera != null)
                 m_StatusHud = StatusIndicator.Attach(hmdCamera.transform);
+            if (showControlPanel && hmdCamera != null)
+                ControlPanel.Attach(hmdCamera, trackingOrigin, port);
         }
 
         void OnEnable()

@@ -37,7 +37,37 @@ python Tools/subscriber.py --host <headset-ip> --port 5555
 ```
 
 Find the headset IP in the device's Wi-Fi settings; it must be on the same
-network as the PC.
+network as the PC. The quicker way is the **IP** switch on the headset's control
+panel (below), which shows the exact `<headset-ip>:5555` to connect to.
+
+## On-device control panel
+
+The status dots (HMD, left, right, receiver) sit at the top centre of the view,
+with a **gear** button just above them. Pressing the gear opens a panel just below
+the dots with two switches, and pressing it again closes the panel. Closing it only
+hides the panel; a switch that is on stays on. Both switches are **off** at every
+launch. Press a button by poking it with a fingertip, or by pointing a controller
+at it and pulling the index trigger. Both input methods work in both APKs.
+
+| Switch | On | Off |
+| --- | --- | --- |
+| **IP** (top) | Shows `<headset-ip>:<port>`, the address a PC connects to for the pose stream. Refreshed every 2 s, so a Wi-Fi change shows up by itself | Shows `-` |
+| **3D view** (bottom) | Turns passthrough off (opaque dark background) and asks for a 3D view from the source address shown next to it | Passthrough back on |
+
+A 3D-view source (ZED, C1, …) serves WHEP over HTTPS, and **the headset connects to
+the source**, so the headset has to know the source's IP. **Edit** opens a numeric
+keypad for it: type `a.b.c.d` or `a.b.c.d:port` (the port defaults to `8443`) and
+press **OK**. Invalid input is rejected with the reason shown above the keypad.
+The address is saved on the headset and kept across launches. The first time
+3D view is switched on with no saved address, the keypad opens by itself.
+
+**This build has no video receiver yet.** Switching 3D view on turns passthrough
+off and shows `no receiver` under the address. A receiver (the ZED WHEP client on
+`feature/zed_streaming`) plugs in through `RemoteView` (`Changed`, `Active`,
+`Endpoint.WhepUrl`, `ReportStatus`) and needs no change to the panel. The pose
+stream is unaffected by either switch.
+
+The panel can be turned off with `showControlPanel` on the `PosePublisher` object.
 
 ## Verifying the stream on a real headset
 
