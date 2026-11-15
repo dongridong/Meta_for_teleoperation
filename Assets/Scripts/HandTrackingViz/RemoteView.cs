@@ -24,7 +24,29 @@ namespace HandTrackingViz
             Port = port;
         }
 
+        /// <summary>
+        /// WHEP paths a source may serve, tried in this order; a path with no
+        /// stream answers 404 at once, so the misses cost nothing.
+        ///   /whep              ZED rig (zedx_xr.py)
+        ///   /stereo_raw/whep   stereo viewer server: low-latency raw path, if running
+        ///   /stereo_h264/whep  stereo viewer server: vendor H.264 path, started on
+        ///                      demand (can take ~15 s to answer)
+        /// The last two follow the order that server's own web page uses.
+        /// </summary>
+        public static readonly string[] WhepPaths = { "/whep", "/stereo_raw/whep", "/stereo_h264/whep" };
+
         public string WhepUrl => $"https://{Host}:{Port}/whep";
+
+        public string[] WhepUrls
+        {
+            get
+            {
+                var urls = new string[WhepPaths.Length];
+                for (int i = 0; i < urls.Length; i++)
+                    urls[i] = $"https://{Host}:{Port}{WhepPaths[i]}";
+                return urls;
+            }
+        }
         public string CalibrationUrl => $"https://{Host}:{Port}/zedx.json";
 
         public override string ToString() => $"{Host}:{Port}";
@@ -89,10 +111,9 @@ namespace HandTrackingViz
     // The hand-off point between the control panel and a 3D-view receiver.
     //
     // The panel owns the user's intent (3D view on/off, which source); a
-    // receiver owns the connection. They meet only here, so a receiver can be
-    // added later (the ZED WHEP client lives on feature/zed_streaming) without
-    // the panel knowing anything about WebRTC, and without the receiver
-    // knowing anything about the panel:
+    // receiver owns the connection. They meet only here, so the panel knows
+    // nothing about WebRTC and the receiver (ZedStream.ZedPanelController)
+    // knows nothing about the panel:
     //
     //   RemoteView.Changed += () => {
     //       if (RemoteView.Active) Connect(RemoteView.Endpoint.WhepUrl);
@@ -100,16 +121,15 @@ namespace HandTrackingViz
     //   };
     //   RemoteView.ReportStatus("connected");
     //
-    // This build ships NO receiver, so turning the 3D view on only switches
-    // passthrough off and waits; the panel says so ("no receiver").
+    // If no receiver is in the scene, nothing ever reports a status and the
+    // panel says so ("no receiver").
     //
     // The endpoint persists across launches (PlayerPrefs). Active does not —
     // the app always starts with the 3D view off.
     // ====================================================================
     public static class RemoteView
     {
-        // The ZED rig's Jetson on the lab LAN — the same default
-        // ZedPanelController ships with on feature/zed_streaming.
+        // The ZED rig's Jetson on the lab LAN.
         public const string DefaultHost = "192.168.20.131";
         public const int DefaultPort = 8443;
 
