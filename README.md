@@ -52,7 +52,7 @@ at it and pulling the index trigger. Both input methods work in both APKs.
 | Switch | On | Off |
 | --- | --- | --- |
 | **IP** (top) | Shows `<headset-ip>:<port>`, the address a PC connects to for the pose stream. Refreshed every 2 s, so a Wi-Fi change shows up by itself | Shows `-` |
-| **3D view** (bottom) | Turns passthrough off (opaque dark background) and asks for a 3D view from the source address shown next to it | Passthrough back on |
+| **3D view** (bottom) | Turns passthrough off, connects to the source address shown next to it and shows its stereo video | Disconnects, passthrough back on |
 
 A 3D-view source (ZED, C1, …) serves WHEP over HTTPS, and **the headset connects to
 the source**, so the headset has to know the source's IP. **Edit** opens a numeric
@@ -61,11 +61,38 @@ press **OK**. Invalid input is rejected with the reason shown above the keypad.
 The address is saved on the headset and kept across launches. The first time
 3D view is switched on with no saved address, the keypad opens by itself.
 
-**This build has no video receiver yet.** Switching 3D view on turns passthrough
-off and shows `no receiver` under the address. A receiver (the ZED WHEP client on
-`feature/zed_streaming`) plugs in through `RemoteView` (`Changed`, `Active`,
-`Endpoint.WhepUrl`, `ReportStatus`) and needs no change to the panel. The pose
-stream is unaffected by either switch.
+With 3D view on, the headset connects to the address over WebRTC (WHEP). Sources
+serve WHEP on different paths, so it tries `/whep` (ZED), then `/stereo_raw/whep` and
+`/stereo_h264/whep` (the stereo viewer server, in the order its own web page uses),
+and keeps the first that does not answer 404. The source's self-signed certificate
+is accepted for that one address only, which is the step you click through by hand
+in the VR browser. The path it connected on decides how the video is drawn:
+
+| Connected on | View |
+| --- | --- |
+| `/whep` (ZED) | **Flat panel.** A different half for each eye at 1:1 angular size, over a dark grid; the panel eases after your gaze when you turn well away. Uses the same address's `zedx.json` calibration |
+| `/stereo_*/whep` (stereo viewer) | **Fisheye dome.** A 190° equidistant fisheye drawn on a sphere around your head, so turning your head looks around inside the picture (as the web page's VR mode does). A side-by-side frame (width:height 1.6 or more) gives each eye its half; a single-lens frame goes to both eyes |
+
+The dome takes the direction you face when the first frame arrives as straight
+ahead. With a controller, the right thumbstick tunes it live as on the web page:
+left/right turns the two eye images against each other (where the eyes converge),
+up/down changes the lens field of view, and a press recentres. The tuning is saved
+on the headset.
+
+The status line under the address says how it is going:
+
+| Status | Meaning |
+| --- | --- |
+| `connecting...` | Attempt in progress |
+| `can't reach host, retrying` | Nothing accepts connections at that IP:port. The source is off, or the address or port is wrong |
+| `no answer (timeout), retrying` | No reply. Check that both are on the same network |
+| `no stream (HTTP 404), retrying` | A server answered, but none of those paths has a stream |
+| `connected, waiting for video` | Connected; no frame yet |
+| `streaming 3840x1200` | Receiving (resolution) |
+
+A failed attempt is retried every 5 s, so the headset can be started before the
+source. Changing the address while it is on reconnects to the new one straight
+away. The pose stream is unaffected by either switch.
 
 The panel can be turned off with `showControlPanel` on the `PosePublisher` object.
 

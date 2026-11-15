@@ -49,6 +49,10 @@ namespace HandTrackingViz.EditorTools
             int failures = 0;
 
             failures += Step("Scene setup (XR Origin + passthrough camera + HandVisualizer)", SetupSceneStep);
+            // The 3D-view receiver behind the control panel's "3D view" switch.
+            // Idle until that switch is on, so it costs nothing otherwise.
+            failures += Step("ZED video rig (panel + rest frame + WHEP client)", () =>
+                ZedStream.EditorTools.ZedSceneSetup.SetupRig());
             failures += Step("Android player settings (IL2CPP / ARM64 / minSDK32 / Linear)", () =>
                 HandTrackingVizPlayerSettings.Configure());
             failures += Step("Register OpenXR loader (Android + Standalone)", () =>
